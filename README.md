@@ -183,8 +183,10 @@ mvn clean test
 
 ---
 
+
 ## 📂 Project Structure
 
+```text
 fanout-engine/
 ├── pom.xml
 ├── README.md
@@ -207,8 +209,8 @@ fanout-engine/
 │       └── java/com/fanout/
 │           ├── TransformerTest.java
 │           └── OrchestratorTest.java
+```
 
----
 
 ## 🛡 Non-Functional Improvements
 
