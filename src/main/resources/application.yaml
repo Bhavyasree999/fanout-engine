@@ -1,0 +1,15 @@
+source:
+  path: sample.csv
+
+queue:
+  capacity: 1000
+
+sinks:
+  rest:
+    rateLimit: 50
+  grpc:
+    rateLimit: 100
+  mq:
+    rateLimit: 200
+  db:
+    rateLimit: 500
