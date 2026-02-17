@@ -22,6 +22,7 @@ This system:
 
 ### Data Flow
 
+```text
 FileProducer (Streaming)
         ↓
 BlockingQueue (Backpressure)
@@ -34,6 +35,7 @@ FanOutOrchestrator
  └── DB Sink (Avro-like Map)
         ↓
 Metrics + Dead Letter Queue
+```
 
 ---
 
