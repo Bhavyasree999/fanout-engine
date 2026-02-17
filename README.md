@@ -263,10 +263,3 @@ This project was developed with GPT-assisted guidance for:
 
 ---
 
-## 👩‍💻 Author
-
-Bhavya Sree  
-Software Engineer Intern Assignment  
-
-GitHub Repository:
-https://github.com/Bhavyasree999/fanout-engine
