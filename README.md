@@ -4,187 +4,195 @@
 
 This project implements a Distributed Data Fan-Out & Transformation Engine in Java.
 
-In modern data architectures, a single source of truth (such as a bulk export file) must be propagated to multiple downstream systems like REST APIs, gRPC services, message queues, and databases.
+The system reads records from a CSV file and distributes them concurrently to multiple downstream mock sinks while ensuring:
 
-This system:
+- Streaming ingestion (no full file load into memory)
+- Backpressure handling using BlockingQueue
+- Per-sink dynamic rate limiting
+- Retry mechanism with Dead Letter Queue (DLQ)
+- Throughput and observability metrics
+- Zero data loss guarantee
 
-- Streams large files safely (supports very large files without loading into memory)
-- Applies per-sink transformations using the Strategy Pattern
-- Dispatches records concurrently
-- Implements rate limiting per sink
-- Supports retry logic with Dead Letter Queue (DLQ)
-- Provides throughput and observability metrics
-- Ensures backpressure using BlockingQueue
+This simulates a production-grade backend data pipeline used in modern distributed systems.
 
 ---
 
 ## 🏗 Architecture
 
-### Data Flow
+### 🔹 High-Level Flow
 
 ```text
+CSV File
+   ↓
 FileProducer (Streaming)
-        ↓
-BlockingQueue (Backpressure)
-        ↓
-FanOutOrchestrator
-        ↓
- ├── REST Sink (JSON)
- ├── gRPC Sink (Protobuf - mocked)
- ├── MQ Sink (XML)
- └── DB Sink (Avro-like Map)
-        ↓
+   ↓
+BlockingQueue (Backpressure Buffer)
+   ↓
+FanOutOrchestrator (Thread Pool Execution)
+   ↓
+Parallel Distribution to Sinks
+   ↓
 Metrics + Dead Letter Queue
 ```
 
 ---
 
-## 🧠 Technical Design
+### 🔹 Supported Sinks & Transformations
 
-### 1️⃣ Ingestion Layer (Memory Safe Streaming)
+| Sink | Format | Description |
+|------|--------|------------|
+| REST API | JSON | Simulated HTTP POST |
+| gRPC | Protobuf (mocked) | Simulated gRPC client |
+| Message Queue | XML | Simulated topic publish |
+| Wide-Column DB | Avro-like Map | Simulated async UPSERT |
 
-- Uses BufferedReader
-- Reads file line-by-line
-- Does NOT load entire file into memory
-- Safe under small heap sizes (e.g., -Xmx512m)
-- Uses ArrayBlockingQueue to implement backpressure
-
-If sinks are slow:
-- Queue fills
-- Producer blocks
-- Memory remains stable
-- No OutOfMemoryError occurs
+Each sink has an independent configurable rate limiter.
 
 ---
 
-### 2️⃣ Transformation Layer (Strategy Pattern)
+## ⚙️ Setup & Execution
 
-Each sink requires a different format:
+### 1️⃣ Build Project
 
-| Sink | Format |
-|------|--------|
-| REST | JSON |
-| gRPC | Protobuf (mocked) |
-| MQ | XML |
-| DB | Avro-like Map |
+```bash
+mvn clean package
+```
+
+---
+
+### 2️⃣ Run Application
+
+```bash
+java -jar target/fanout-engine-1.0.jar
+```
+
+---
+
+### 3️⃣ Run With Limited Heap (Streaming Proof)
+
+```bash
+java -Xmx512m -jar target/fanout-engine-1.0.jar
+```
+
+This confirms:
+- The file is processed line-by-line
+- The entire dataset is NOT loaded into memory
+- The system runs safely with small heap
+
+---
+
+## 🧠 Core Design Decisions
+
+### 🔹 Streaming & Memory Safety
+
+- File processed using BufferedReader
+- No in-memory accumulation of all records
+- Suitable for very large files (100GB+ conceptually)
+- Stable and predictable memory footprint
+
+---
+
+### 🔹 Backpressure Strategy
+
+Implemented using:
+
+```java
+ArrayBlockingQueue<>(queueCapacity);
+```
+
+Behavior:
+- Producer blocks when queue is full
+- Automatically slows ingestion if sinks are slow
+- Prevents OutOfMemoryError
+- Ensures stable performance under load
+
+---
+
+### 🔹 Concurrency Model
+
+- Uses ExecutorService with CPU-based thread pool sizing
+- Each record is processed across sinks in parallel
+- Thread-safe metrics using AtomicLong & ConcurrentHashMap
+
+Benefits:
+- Scalable with available CPU cores
+- Controlled concurrency
+- No race conditions
+- Clean parallel execution
+
+---
+
+### 🔹 Transformation Layer (Strategy Pattern)
+
+Each sink requires a different output format:
+
+- REST → JSON
+- gRPC → Protobuf
+- MQ → XML
+- DB → Avro-like Map
 
 Implemented using:
 - Transformer interface
 - Concrete transformer classes
 - TransformerFactory
 
-Extensibility:
-Adding a new sink requires only:
-- New Sink implementation
-- New Transformer
-No changes to the orchestrator are needed.
+New sinks can be added without modifying the orchestrator.
 
 ---
 
-### 3️⃣ Distribution Layer (Mock Sinks)
+### 🔹 Rate Limiting
 
-Each sink:
+Implemented using Guava `RateLimiter`.
 
-- Implements Sink interface
-- Uses Guava RateLimiter
-- Simulates async network calls
-- Randomly fails to test retry
-- Returns CompletableFuture<Boolean>
-
----
-
-### 4️⃣ Concurrency Model
-
-- Uses ExecutorService (Fixed Thread Pool)
-- Thread count = number of available CPU cores
-- Processes sinks in parallel
-- Uses AtomicLong and ConcurrentHashMap for thread safety
-
-This ensures scalability and no race conditions.
-
----
-
-### 5️⃣ Throttling (Rate Limiting)
-
-Each sink has configurable rate limits defined in application.yaml.
-
-Example:
-
-restRate: 50
-grpcRate: 100
-mqRate: 200
-dbRate: 500
-
-Implemented using:
-com.google.common.util.concurrent.RateLimiter
+Each sink has configurable limits defined in `application.yaml`.
 
 Prevents overwhelming downstream systems.
 
 ---
 
-### 6️⃣ Retry & Dead Letter Queue (DLQ)
+### 🔹 Retry & Dead Letter Queue (DLQ)
 
-- Maximum 3 retry attempts per record per sink
-- After 3 failures, record is added to Dead Letter Queue
-- DLQ size is printed at completion
+- Maximum 3 retries per record per sink
+- Failed records stored in Dead Letter Queue
+- No silent drops
 
-Ensures:
-- Zero data loss
-- Fault tolerance
-- Failure accountability
+Every record results in:
+
+```
+Success OR Failure (after retries → DLQ)
+```
+
+Zero data loss guaranteed.
 
 ---
 
-### 7️⃣ Observability
+### 🔹 Observability & Metrics
 
-The system prints:
+At completion, the system prints:
 
-- Total operations
+- Total records processed
 - Throughput (records/sec)
 - Success count per sink
 - Failure count per sink
 - Dead Letter Queue size
 
-Example output:
+Example Output:
 
-Total: 45
-Throughput (records/sec): 28.42
-rest Success: 10
-grpc Success: 10
-mq Success: 10
-db Success: 10
-Dead Letter Records: 2
+```text
+================ FINAL METRICS =================
+Total Records Processed : 31
+Throughput              : 18.88 records/sec
+
+MQ    -> Success: 10 | Failure: 1
+GRPC  -> Success: 10 | Failure: 0
+DB    -> Success: 10 | Failure: 0
+
+Dead Letter Records     : 0
+================================================
 Processing Completed. Application Shutting Down.
+```
 
 ---
-
-## ⚙️ Setup Instructions
-
-### Prerequisites
-
-- Java 17+
-- Maven 3.9+
-
----
-
-### Build
-
-mvn clean package
-
----
-
-### Run
-
-java -jar target/fanout-engine-1.0.jar
-
----
-
-### Run Tests
-
-mvn clean test
-
----
-
 
 ## 📂 Project Structure
 
@@ -194,86 +202,82 @@ fanout-engine/
 ├── README.md
 ├── .gitignore
 ├── src/
-│   ├── main/
-│   │   ├── java/com/fanout/
-│   │   │   ├── Main.java
-│   │   │   ├── config/
-│   │   │   ├── ingestion/
-│   │   │   ├── model/
-│   │   │   ├── orchestrator/
-│   │   │   ├── sink/
-│   │   │   ├── transform/
-│   │   │   └── metrics/
-│   │   └── resources/
-│   │       ├── application.yaml
-│   │       └── sample.csv
-│   └── test/
-│       └── java/com/fanout/
-│           ├── TransformerTest.java
-│           └── OrchestratorTest.java
+│   ├── main/java/com/fanout/
+│   │   ├── config/
+│   │   ├── ingestion/
+│   │   ├── model/
+│   │   ├── orchestrator/
+│   │   ├── sink/
+│   │   ├── transform/
+│   │   └── metrics/
+│   ├── main/resources/
+│   │   ├── application.yaml
+│   │   └── sample.csv
+│   └── test/java/com/fanout/
+│       ├── TransformerTest.java
+│       └── OrchestratorTest.java
 ```
 
+---
 
-## 🛡 Non-Functional Improvements
+## 🛡 Zero Data Loss Guarantee
 
-Security & Reliability:
-- Rate limiting prevents overload
-- Thread-safe collections used
-- Config-driven architecture
-- Backpressure prevents memory overflow
+Every record is accounted for:
 
-Performance:
-- Streaming ingestion
-- CPU-based thread pool sizing
-- Minimal memory footprint
-- Concurrent collections
+- Success  
+OR  
+- Failure (after retries, captured in DLQ)
+
+No record is ignored or silently dropped.
 
 ---
 
-## 🧪 Testing
+## ⚡ Scalability
+
+The system scales based on:
+
+- CPU cores
+- Thread pool size
+- Queue capacity
+- Sink rate limits
+
+The architecture supports adding new sinks without changing the core orchestrator.
+
+---
+
+## 🧪 Testing Strategy
 
 Includes:
-- Transformer unit test
-- Metrics test
 
-Run:
+- Unit tests for transformers
+- Metrics validation tests
+- Orchestrator behavior test
 
+Run tests using:
+
+```bash
 mvn test
+```
 
 ---
 
-## 📌 Assumptions
+## 🔮 Future Enhancements
 
-- Input file is valid CSV
-- Protobuf and Avro are mocked
-- Downstream systems are simulated
-- Network failures are randomized
-
----
-
-## 🤖 AI Tooling Usage
-
-This project was developed with GPT-assisted guidance for:
-
-- Streaming implementation
-- Strategy pattern design
-- Retry and DLQ logic
-- Throughput calculation
-- Rate limiting integration
-- Unit test creation
-- Documentation generation
+- Persistent Dead Letter Queue
+- Real REST/gRPC integration
+- Kafka-based distribution
+- Prometheus metrics integration
+- Docker containerization
+- Horizontal scaling
 
 ---
 
-## 📈 Evaluation Alignment
+## 🎯 Key Highlights
 
-✔ Concurrency Logic  
-✔ Memory Management  
-✔ Design Patterns  
-✔ Resilience (Retry + DLQ)  
-✔ Throttling  
-✔ Observability  
-✔ Config-Driven  
-✔ Testing  
-
+- Streaming architecture
+- Backpressure-safe design
+- Concurrent sink execution
+- Retry & resilience logic
+- Throughput-based observability
+- Extensible modular structure
 
