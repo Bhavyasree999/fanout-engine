@@ -28,10 +28,10 @@ BlockingQueue (Backpressure)
         ↓
 FanOutOrchestrator
         ↓
-  REST Sink (JSON)
-  gRPC Sink (Protobuf - mocked)
-  MQ Sink (XML)
-  DB Sink (Avro-like Map)
+ ├── REST Sink (JSON)
+ ├── gRPC Sink (Protobuf - mocked)
+ ├── MQ Sink (XML)
+ └── DB Sink (Avro-like Map)
         ↓
 Metrics + Dead Letter Queue
 
@@ -186,16 +186,27 @@ mvn clean test
 ## 📂 Project Structure
 
 fanout-engine/
- ├── pom.xml
- ├── README.md
- ├── src/
- │   ├── main/
- │   │   ├── java/com/fanout/
- │   │   └── resources/
- │   │        ├── application.yaml
- │   │        └── sample.csv
- │   └── test/java/com/fanout/
- └── .gitignore
+├── pom.xml
+├── README.md
+├── .gitignore
+├── src/
+│   ├── main/
+│   │   ├── java/com/fanout/
+│   │   │   ├── Main.java
+│   │   │   ├── config/
+│   │   │   ├── ingestion/
+│   │   │   ├── model/
+│   │   │   ├── orchestrator/
+│   │   │   ├── sink/
+│   │   │   ├── transform/
+│   │   │   └── metrics/
+│   │   └── resources/
+│   │       ├── application.yaml
+│   │       └── sample.csv
+│   └── test/
+│       └── java/com/fanout/
+│           ├── TransformerTest.java
+│           └── OrchestratorTest.java
 
 ---
 
